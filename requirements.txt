@@ -1,1 +1,2 @@
 Flask==2.3.2
+yfinance==0.2.26
