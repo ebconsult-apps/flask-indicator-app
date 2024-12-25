@@ -148,11 +148,9 @@ def home():
     today_vix = vix_data['VIX'].iloc[-1]
 
     # Generera aktionsrekommendation
-    if today_vix < gp_optimized_params[2]:  # low1
-        recommendation = f"Köp {gp_optimized_params[0]}% av kapitalet - VIX är under {gp_optimized_params[2]}."
-    elif today_vix < gp_optimized_params[3]:  # low2
-        recommendation = f"Köp ytterligare {gp_optimized_params[1]}% av kapitalet - VIX är under {gp_optimized_params[3]}."
-    elif today_vix > gp_optimized_params[4]:  # sellall
+    if today_vix < gp_optimized_params[1]:  # low1
+        recommendation = f"Köp {gp_optimized_params[0]}% av kapitalet - VIX är under {gp_optimized_params[1]}."
+    elif today_vix > gp_optimized_params[2]:  # sellall
         recommendation = "Sälj alla positioner - VIX är över sellall."
     else:
         recommendation = "Inga åtgärder rekommenderas idag."
