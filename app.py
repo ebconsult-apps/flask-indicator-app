@@ -30,8 +30,8 @@ def simulate_gp_model(params, vix_data, leverage=1, initial_cap=100000, sell_fee
             capital -= holding_cost
 
         # Utför köp om VIX < low1
-        if vix < low1 and capital > 0:
-            amount_to_invest = min(capital, capital * (buy1 / 100) * leverage)
+        if vix < low1 and capital > 0 and positions = 0:
+            amount_to_invest = min(capital, capital * (buy1 / 100))
             positions += amount_to_invest / vix
             capital -= amount_to_invest
             actions.append({
@@ -44,7 +44,7 @@ def simulate_gp_model(params, vix_data, leverage=1, initial_cap=100000, sell_fee
 
         # Sälj allt om VIX > sellall
         if vix > sellall and positions > 0:
-            sell_value = positions * vix * (1 - sell_fee)
+            sell_value = positions * vix * leverage * (1 - sell_fee)
             capital += sell_value
             positions = 0
             actions.append({
@@ -56,7 +56,7 @@ def simulate_gp_model(params, vix_data, leverage=1, initial_cap=100000, sell_fee
             })
 
         # Beräkna aktuellt ackumulerat värde
-        total_value = capital + (positions * vix)
+        total_value = capital + (positions * vix * leverage)
         if actions:
             actions[-1]["Ackumulerat Värde"] = total_value
 
