@@ -13,16 +13,16 @@ app = Flask(__name__)
 # GP-Optimized parametrar (buy1%, low1, sellall)
 gp_optimized_params = [82.93481, 13.147202, 19.855963]
 
+# === 2% årlig holding cost ===
+# Anta daglig = 0.02 / 365
+ANNUAL_FEE = 0.02
+daily_holding_fee = ANNUAL_FEE / 365  # ~0.00005479
+
 def make_levered_price_series(vix_data, leverage=1, start_price=100.0):
     """
     Skapar en syntetisk kolumn 'LevClose' i vix_data,
     som simulerar en daglig rebalanserad produkt med x-gånger hävstång
     baserat på VIX-förändringar.
-
-    :param vix_data: DataFrame med 'VIX'-kolumn och ett datumindex.
-    :param leverage: Hävstång (t.ex. 2 för 2x).
-    :param start_price: Startvärde för den syntetiska produkten.
-    :return: Samma DataFrame med en ny kolumn 'LevClose'.
     """
     df = vix_data.copy()
     df['LevClose'] = start_price
@@ -32,7 +32,6 @@ def make_levered_price_series(vix_data, leverage=1, start_price=100.0):
         curr_vix = df['VIX'].iloc[i]
         prev_price = df['LevClose'].iloc[i - 1]
 
-        # Undvik division by zero om data är trasig
         if prev_vix == 0:
             df.loc[df.index[i], 'LevClose'] = prev_price
         else:
@@ -55,43 +54,29 @@ def simulate_gp_model(
       - Om (position / kapital) < 0.25 och VIX < low1 => "Köp igen",
       - Säljer allt när VIX > sellall,
       - Drar daglig holding fee från positionens värde,
-      - Uppdaterar positionsvärdet genom att spåra hur många andelar (shares) man äger.
-
-    :param params: [buy1, low1, sellall]
-    :param vix_data: DataFrame med kolumnerna 'VIX' samt 'LevClose'.
-    :param leverage: Hävstång för den syntetiska VIX-produkten.
-    :param initial_cap: Startkapital.
-    :param sell_fee: Procentuell avgift vid sälj (0.05 = 5%).
-    :param holding_fee: Daglig avgift på position (0.0002 = 0.02%).
-    :return: En lista av dictar med bl.a. Datum, Kapital, Positioner, Ackumulerat Värde, Aktion.
+      - Spårar positionsvärdet via antal andelar (shares).
     """
     buy1, low1, sellall = params
     capital = initial_cap
-
-    # Variabel för antal andelar i den hävstångade produkten
     shares_owned = 0.0
 
-    # Skapa syntetisk hävstångskolumn om den inte redan finns
     df = make_levered_price_series(vix_data, leverage=leverage, start_price=100.0)
-
     daily_log = []
     for i in range(len(df)):
         date = df.index[i]
         vix = df['VIX'].iloc[i]
         lev_price = df['LevClose'].iloc[i]
 
-        # Beräkna nuvarande positionsvärde
         positions_value = shares_owned * lev_price
 
         # Dra daglig holding fee
         if positions_value > 0:
             positions_value *= (1 - holding_fee)
-            # Uppdatera antal andelar
+            # Uppdatera shares
             if lev_price != 0:
                 shares_owned = positions_value / lev_price
 
         # --- KÖPLOGIK 1 ---
-        # Om VIX < low1 och vi har 0 andelar
         if vix < low1 and capital > 0 and shares_owned == 0:
             amount_to_invest = capital * (buy1 / 100.0)
             new_shares = amount_to_invest / lev_price if lev_price > 0 else 0
@@ -107,7 +92,6 @@ def simulate_gp_model(
             })
 
         # --- KÖPLOGIK 2 ---
-        # Om VIX < low1 och (position / kapital) < 0.25 => "Köp igen"
         positions_value = shares_owned * lev_price
         if vix < low1 and capital > 0:
             if positions_value > 0 and capital > 0:
@@ -127,7 +111,6 @@ def simulate_gp_model(
                     })
 
         # --- SÄLJLOGIK ---
-        # Sälj allt om VIX > sellall
         positions_value = shares_owned * lev_price
         if vix > sellall and shares_owned > 0:
             sell_value = positions_value * (1 - sell_fee)
@@ -142,14 +125,13 @@ def simulate_gp_model(
                 "Positioner": 0.0,
             })
 
-        # Räkna ut totalvärde
         positions_value = shares_owned * lev_price
         total_value = capital + positions_value
 
-        # Logga minst en rad varje dag
+        # Logga minst en rad per dag
         daily_log.append({
             "Datum": date,
-            "Aktion": "",  # Tom om ingen ny affär
+            "Aktion": "",
             "VIX": vix,
             "Kapital": capital,
             "Positioner": positions_value,
@@ -157,6 +139,27 @@ def simulate_gp_model(
         })
 
     return daily_log
+
+def compute_max_drawdown(equity_series):
+    """
+    Beräknar maximal drawdown av en tidsserie av totala värden.
+    MDD = max( (peak - trough) / peak ).
+    Returnerar ett positivt tal, t.ex. 0.5 = 50%.
+    """
+    # equity_series är en pandas Series med t.ex. daily ack värden
+    roll_max = equity_series.cummax()
+    drawdown = (equity_series - roll_max) / roll_max
+    max_drawdown = drawdown.min()  # blir ett negativt tal
+    return abs(max_drawdown)  # gör det positivt
+
+def probability_of_ruin(equity_series):
+    """
+    Enkel "sannolikhet" att nå 0:
+    Om equity någon gång <= 0 => 1 (100%), annars 0 (0%).
+    """
+    if (equity_series <= 0).any():
+        return 1.0
+    return 0.0
 
 @app.route('/')
 def home():
@@ -186,56 +189,51 @@ def home():
     <ul>
         <li><a href="/gp_model_last6months">/gp_model_last6months</a> – Senaste 6 månadernas simulering</li>
         <li><a href="/gp_model_alltime">/gp_model_alltime</a> – Maximal historik</li>
+        <li><a href="/compare_leverage">/compare_leverage</a> – Jämför 2x och 4x hävstång</li>
     </ul>
     """
     return html
 
 @app.route('/gp_model_last6months')
 def gp_model_last6months():
-    """
-    Visar strategins resultat för de senaste 6 månaderna.
-    """
     end_date = datetime.datetime.now()
     start_date = end_date - timedelta(days=6 * 30)  # ~6 månader
 
-    # Hämta VIX-data
     vix_data = yf.Ticker('^VIX').history(start=start_date, end=end_date)[['Close']].rename(columns={'Close': 'VIX'})
     if len(vix_data) == 0:
         return "Ingen data tillgänglig för de senaste 6 månaderna."
 
-    # Simulera strategin
+    # Använd 1x som tidigare
     actions = simulate_gp_model(
         params=gp_optimized_params,
         vix_data=vix_data,
-        leverage=1,         # justera hävstång här
+        leverage=1,
         initial_cap=100000,
         sell_fee=0.05,
-        holding_fee=0.0002
+        holding_fee=daily_holding_fee  # 2% per år
     )
 
     df = pd.DataFrame(actions)
     df['Datum'] = pd.to_datetime(df['Datum'])
 
-    # Skapa dag-för-dag-linje (sista rad per datum)
+    # Sista rad per datum
     daily_df = df.groupby('Datum', as_index=False).last()
 
     # Rita graf
     plt.figure(figsize=(10, 6))
-    plt.plot(daily_df['Datum'], daily_df['Ackumulerat Värde'], label='Ackumulerat Värde', color='blue')
+    plt.plot(daily_df['Datum'], daily_df['Ackumulerat Värde'], label='Ack Värde (1x)', color='blue')
     plt.xlabel('Datum')
     plt.ylabel('Totalt Värde (SEK)')
-    plt.title('Ackumulerat Värde (Senaste 6 månaderna)')
+    plt.title('Ackumulerat Värde (Senaste 6 månaderna, 1x)')
     plt.legend()
     plt.grid()
 
-    # Spara grafen som base64
     img = io.BytesIO()
     plt.savefig(img, format='png', bbox_inches='tight')
     img.seek(0)
     graph_url = base64.b64encode(img.getvalue()).decode()
     plt.close()
 
-    # Generera HTML-tabell
     table_html = df.to_html(index=False, classes='table table-striped', border=0)
 
     html = f"""
@@ -248,7 +246,8 @@ def gp_model_last6months():
     </head>
     <body>
         <div class="container mt-5">
-            <h1>GP-Optimized (Senaste 6 månaderna)</h1>
+            <h1>GP-Optimized (Senaste 6 månaderna, 1x)</h1>
+            <p>Holding Fee: 2% per år (~{daily_holding_fee:.6f} per dag)</p>
             <div class="mb-4">
                 <img src="data:image/png;base64,{graph_url}" class="img-fluid" alt="Graf för ackumulerade värden">
             </div>
@@ -261,47 +260,38 @@ def gp_model_last6months():
 
 @app.route('/gp_model_alltime')
 def gp_model_alltime():
-    """
-    Visar strategins resultat över hela historiken som finns på Yahoo Finance för ^VIX.
-    """
-    # Hämta maximal historik för VIX
     vix_data = yf.Ticker('^VIX').history(period='max')[['Close']].rename(columns={'Close': 'VIX'})
     if len(vix_data) == 0:
         return "Ingen historisk data tillgänglig för ^VIX."
 
-    # Simulera strategin
     actions = simulate_gp_model(
         params=gp_optimized_params,
         vix_data=vix_data,
-        leverage=1,         # justera hävstång om du vill
+        leverage=1,
         initial_cap=100000,
         sell_fee=0.05,
-        holding_fee=0.0002
+        holding_fee=daily_holding_fee
     )
 
     df = pd.DataFrame(actions)
     df['Datum'] = pd.to_datetime(df['Datum'])
-
-    # Skapa dag-för-dag-linje (ta sista rad per datum)
     daily_df = df.groupby('Datum', as_index=False).last()
 
     # Rita graf
     plt.figure(figsize=(10, 6))
-    plt.plot(daily_df['Datum'], daily_df['Ackumulerat Värde'], label='Ackumulerat Värde', color='green')
+    plt.plot(daily_df['Datum'], daily_df['Ackumulerat Värde'], label='Ack Värde (1x)', color='green')
     plt.xlabel('Datum')
     plt.ylabel('Totalt Värde (SEK)')
-    plt.title('Ackumulerat Värde - Hela Historiken')
+    plt.title('Ackumulerat Värde - Hela Historiken (1x)')
     plt.legend()
     plt.grid()
 
-    # Spara grafen som base64
     img = io.BytesIO()
     plt.savefig(img, format='png', bbox_inches='tight')
     img.seek(0)
     graph_url = base64.b64encode(img.getvalue()).decode()
     plt.close()
 
-    # Generera HTML-tabell
     table_html = df.to_html(index=False, classes='table table-striped', border=0)
 
     html = f"""
@@ -314,7 +304,8 @@ def gp_model_alltime():
     </head>
     <body>
         <div class="container mt-5">
-            <h1>GP-Optimized (Hela Historiken)</h1>
+            <h1>GP-Optimized (Hela Historiken, 1x)</h1>
+            <p>Holding Fee: 2% per år (~{daily_holding_fee:.6f} per dag)</p>
             <div class="mb-4">
                 <img src="data:image/png;base64,{graph_url}" class="img-fluid" alt="Graf för ackumulerade värden">
             </div>
@@ -325,7 +316,111 @@ def gp_model_alltime():
     """
     return render_template_string(html)
 
+@app.route('/compare_leverage')
+def compare_leverage():
+    """
+    Jämför 2x och 4x hävstång. Plotta båda i samma graf.
+    Beräkna max drawdown, sannolikhet att nå 0.
+    """
+    # Hämta maximal data
+    vix_data = yf.Ticker('^VIX').history(period='max')[['Close']].rename(columns={'Close': 'VIX'})
+    if len(vix_data) == 0:
+        return "Ingen historisk data tillgänglig för ^VIX."
+
+    # Simulera 2x
+    actions_2x = simulate_gp_model(
+        params=gp_optimized_params,
+        vix_data=vix_data,
+        leverage=2,
+        initial_cap=100000,
+        sell_fee=0.05,
+        holding_fee=daily_holding_fee
+    )
+    df2 = pd.DataFrame(actions_2x)
+    df2['Datum'] = pd.to_datetime(df2['Datum'])
+    daily_df2 = df2.groupby('Datum', as_index=False).last()
+
+    # Simulera 4x
+    actions_4x = simulate_gp_model(
+        params=gp_optimized_params,
+        vix_data=vix_data,
+        leverage=4,
+        initial_cap=100000,
+        sell_fee=0.05,
+        holding_fee=daily_holding_fee
+    )
+    df4 = pd.DataFrame(actions_4x)
+    df4['Datum'] = pd.to_datetime(df4['Datum'])
+    daily_df4 = df4.groupby('Datum', as_index=False).last()
+
+    # Beräkna max drawdown och "prob of ruin"
+    mdd_2x = compute_max_drawdown(daily_df2['Ackumulerat Värde'])
+    ruin_2x = probability_of_ruin(daily_df2['Ackumulerat Värde'])
+
+    mdd_4x = compute_max_drawdown(daily_df4['Ackumulerat Värde'])
+    ruin_4x = probability_of_ruin(daily_df4['Ackumulerat Värde'])
+
+    # Rita i samma figur
+    plt.figure(figsize=(10, 6))
+    plt.plot(daily_df2['Datum'], daily_df2['Ackumulerat Värde'], label=f'2x Lev', color='blue')
+    plt.plot(daily_df4['Datum'], daily_df4['Ackumulerat Värde'], label=f'4x Lev', color='red')
+    plt.xlabel('Datum')
+    plt.ylabel('Totalt Värde (SEK)')
+    plt.title('Jämförelse av 2x vs 4x (2% årlig holding fee)')
+    plt.legend()
+    plt.grid()
+
+    img = io.BytesIO()
+    plt.savefig(img, format='png', bbox_inches='tight')
+    img.seek(0)
+    graph_url = base64.b64encode(img.getvalue()).decode()
+    plt.close()
+
+    # Skapa en liten rapport-ruta
+    # MDD (i procent) & ruin (i procent)
+    mdd_2x_pct = mdd_2x * 100.0
+    ruin_2x_pct = ruin_2x * 100.0
+
+    mdd_4x_pct = mdd_4x * 100.0
+    ruin_4x_pct = ruin_4x * 100.0
+
+    stats_html = f"""
+    <h2>2x Hävstång</h2>
+    <p>Max Drawdown: {mdd_2x_pct:.2f}%<br>
+       Probability of 0: {ruin_2x_pct:.2f}%</p>
+    <h2>4x Hävstång</h2>
+    <p>Max Drawdown: {mdd_4x_pct:.2f}%<br>
+       Probability of 0: {ruin_4x_pct:.2f}%</p>
+    """
+
+    html = f"""
+    <!DOCTYPE html>
+    <html lang="sv">
+    <head>
+        <meta charset="UTF-8">
+        <title>Jämförelse 2x och 4x</title>
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.1.3/css/bootstrap.min.css">
+    </head>
+    <body>
+        <div class="container" style="max-width: 960px; margin: auto;">
+            <h1>Jämförelse: 2x vs 4x Hävstång</h1>
+            <p>Holding Fee: 2% per år (~{daily_holding_fee:.6f} per dag)</p>
+            <div style="margin-bottom: 20px;">
+                <img src="data:image/png;base64,{graph_url}" alt="Leverage Comparison" style="max-width:100%;">
+            </div>
+            {stats_html}
+            <h3>Data 2x (senaste rad per dag)</h3>
+            {daily_df2.to_html(index=False, classes='table table-striped', border=0)}
+            <br>
+            <h3>Data 4x (senaste rad per dag)</h3>
+            {daily_df4.to_html(index=False, classes='table table-striped', border=0)}
+        </div>
+    </body>
+    </html>
+    """
+    return html
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    # Kör appen lokalt eller på en server
     app.run(host="0.0.0.0", port=port)
