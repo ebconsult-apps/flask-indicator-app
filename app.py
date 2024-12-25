@@ -15,7 +15,7 @@ gp_optimized_params = [82.93481, 19.436844, 13.147202, 10.477527, 19.855963]  # 
 
 # Funktion för simulering med GP-Optimized modellen
 def simulate_gp_model(params, vix_data, leverage=1, initial_cap=100000, sell_fee=0.05, holding_fee=0.0002):
-    buy1, buy2, low1, low2, sellall = params
+    buy1, low1, sellall = params
     capital = initial_cap
     positions = 0
     actions = []
@@ -29,28 +29,31 @@ def simulate_gp_model(params, vix_data, leverage=1, initial_cap=100000, sell_fee
             holding_cost = positions * vix * holding_fee
             capital -= holding_cost
 
-        # Utför köp baserat på tröskelvärden (endast ett köp per iteration)
-        bought = False
-        if not bought and vix < low1 and capital > 0:
+        # Utför köp om VIX < low1
+        if vix < low1 and capital > 0:
             amount_to_invest = min(capital, capital * (buy1 / 100) * leverage)
             positions += amount_to_invest / vix
             capital -= amount_to_invest
-            bought = True
-            actions.append({"Datum": date, "Aktion": "Köp", "VIX": vix, "Kapital": capital, "Positioner": positions})
-
-        if not bought and vix < low2 and capital > 0:
-            amount_to_invest = min(capital, capital * (buy2 / 100) * leverage)
-            positions += amount_to_invest / vix
-            capital -= amount_to_invest
-            bought = True
-            actions.append({"Datum": date, "Aktion": "Köp", "VIX": vix, "Kapital": capital, "Positioner": positions})
+            actions.append({
+                "Datum": date,
+                "Aktion": "Köp",
+                "VIX": vix,
+                "Kapital": capital,
+                "Positioner": positions
+            })
 
         # Sälj allt om VIX > sellall
         if vix > sellall and positions > 0:
             sell_value = positions * vix * (1 - sell_fee)
             capital += sell_value
             positions = 0
-            actions.append({"Datum": date, "Aktion": "Sälj Allt", "VIX": vix, "Kapital": capital, "Positioner": positions})
+            actions.append({
+                "Datum": date,
+                "Aktion": "Sälj Allt",
+                "VIX": vix,
+                "Kapital": capital,
+                "Positioner": positions
+            })
 
         # Beräkna aktuellt ackumulerat värde
         total_value = capital + (positions * vix)
