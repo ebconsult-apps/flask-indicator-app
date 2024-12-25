@@ -1,6 +1,7 @@
 from flask import Flask, jsonify
 import pandas as pd
 import yfinance as yf
+import os
 import datetime
 from datetime import timedelta
 
@@ -94,4 +95,5 @@ def home():
     """
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    port = int(os.environ.get("PORT", 5000))  # Lyssna på port från miljövariabeln
+    app.run(host="0.0.0.0", port=port)
