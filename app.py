@@ -1,6 +1,8 @@
 from flask import Flask, jsonify
 import pandas as pd
 import yfinance as yf
+import datetime
+from datetime import timedelta
 
 app = Flask(__name__)
 
@@ -62,7 +64,7 @@ def simulate_gp_model(params, vix_data, leverage=1, initial_cap=100000, sell_fee
 
     return actions
 
-# Endpoint för att visa GP-Minimized modellen
+# Endpoint för full historik (maximalt data)
 @app.route('/gp_model')
 def gp_model():
     vix_data = yf.Ticker('^VIX').history(period="max")[['Close']].rename(columns={'Close': 'VIX'})
@@ -70,10 +72,26 @@ def gp_model():
     actions = simulate_gp_model(gp_optimized_params, vix_data_2012)
     return jsonify(actions)
 
+# Endpoint för de senaste 6 månaderna
+@app.route('/gp_model_last6months')
+def gp_model_last6months():
+    end_date = datetime.datetime.now()
+    start_date = end_date - timedelta(days=6 * 30)  # Ungefär 6 månader
+    vix_data = yf.Ticker('^VIX').history(start=start_date, end=end_date)[['Close']].rename(columns={'Close': 'VIX'})
+    actions = simulate_gp_model(gp_optimized_params, vix_data)
+    return jsonify(actions)
+
 # Root-route
 @app.route('/')
 def home():
-    return "Besök /gp_model för att se GP-Optimized modellen i JSON-format."
+    return """
+    <h1>Välkommen till GP-Optimized Modellen</h1>
+    <p>Använd följande endpoints:</p>
+    <ul>
+        <li><a href="/gp_model">/gp_model</a>: Visa full historik (2012-2024)</li>
+        <li><a href="/gp_model_last6months">/gp_model_last6months</a>: Visa de senaste 6 månaderna</li>
+    </ul>
+    """
 
 if __name__ == "__main__":
     app.run(debug=True)
