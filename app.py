@@ -11,11 +11,11 @@ import base64
 app = Flask(__name__)
 
 # GP-Optimized Parametrar
-gp_optimized_params = [82.93481, 19.436844, 13.147202, 10.477527, 44.975998, 21.186408, 22.163723, 23.466296, 19.855963]
+gp_optimized_params = [82.93481, 19.436844, 13.147202, 10.477527, 19.855963]  # Sälj allt vid sellall
 
 # Funktion för simulering med GP-Optimized modellen
 def simulate_gp_model(params, vix_data, leverage=1, initial_cap=100000, sell_fee=0.05, holding_fee=0.0002):
-    buy1, buy2, low1, low2, sell1, sell2, high1, high2, sellall = params
+    buy1, buy2, low1, low2, sellall = params
     capital = initial_cap
     positions = 0
     actions = []
@@ -31,14 +31,14 @@ def simulate_gp_model(params, vix_data, leverage=1, initial_cap=100000, sell_fee
 
         # Köp 1 om VIX < low1
         if vix < low1 and capital > 0:
-            amount_to_invest = capital * (buy1 / 100) * leverage
+            amount_to_invest = min(capital, capital * (buy1 / 100) * leverage)  # Kontroll för att inte investera mer än tillgängligt kapital
             positions += amount_to_invest / vix
             capital -= amount_to_invest
             actions.append({"Datum": date, "Aktion": "Köp", "VIX": vix, "Kapital": capital, "Positioner": positions})
 
         # Köp 2 om VIX < low2
         if vix < low2 and capital > 0:
-            amount_to_invest = capital * (buy2 / 100) * leverage
+            amount_to_invest = min(capital, capital * (buy2 / 100) * leverage)  # Kontroll för att inte investera mer än tillgängligt kapital
             positions += amount_to_invest / vix
             capital -= amount_to_invest
             actions.append({"Datum": date, "Aktion": "Köp", "VIX": vix, "Kapital": capital, "Positioner": positions})
@@ -52,7 +52,8 @@ def simulate_gp_model(params, vix_data, leverage=1, initial_cap=100000, sell_fee
 
         # Lägg till aktuellt hållt värde
         total_value = capital + (positions * vix)
-        actions[-1]["Ackumulerat Värde"] = total_value
+        if actions:
+            actions[-1]["Ackumulerat Värde"] = total_value
 
     return actions
 
@@ -94,7 +95,7 @@ def gp_model_last6months():
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>GP-Optimized Actions with Accumulation</title>
+        <title>GP-Optimized Actions with Simplified Sell Logic</title>
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.1.3/css/bootstrap.min.css">
     </head>
     <body>
@@ -113,13 +114,31 @@ def gp_model_last6months():
 # Root-route
 @app.route('/')
 def home():
-    return """
+    # Hämta dagens VIX-värde
+    vix_data = yf.Ticker('^VIX').history(period='1d')[['Close']].rename(columns={'Close': 'VIX'})
+    today_vix = vix_data['VIX'].iloc[-1]
+
+    # Generera aktionsrekommendation
+    if today_vix < gp_optimized_params[2]:  # low1
+        recommendation = f"Köp {gp_optimized_params[0]}% av kapitalet - VIX är under {gp_optimized_params[2]}."
+    elif today_vix < gp_optimized_params[3]:  # low2
+        recommendation = f"Köp ytterligare {gp_optimized_params[1]}% av kapitalet - VIX är under {gp_optimized_params[3]}."
+    elif today_vix > gp_optimized_params[4]:  # sellall
+        recommendation = "Sälj alla positioner - VIX är över sellall."
+    else:
+        recommendation = "Inga åtgärder rekommenderas idag."
+
+    # HTML för välkomstsidan
+    html = f"""
     <h1>Välkommen till GP-Optimized Modellen</h1>
+    <p>Dagens VIX-värde: <strong>{today_vix:.2f}</strong></p>
+    <p>Rekommenderad åtgärd: <strong>{recommendation}</strong></p>
     <p>Använd följande endpoints:</p>
     <ul>
         <li><a href="/gp_model_last6months">/gp_model_last6months</a>: Visa aktioner och graf för de senaste 6 månaderna</li>
     </ul>
     """
+    return html
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))  # Lyssna på Render-port
