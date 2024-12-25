@@ -43,22 +43,6 @@ def simulate_gp_model(params, vix_data, leverage=1, initial_cap=100000, sell_fee
             capital -= amount_to_invest
             actions.append({"Datum": date, "Aktion": "Köp", "VIX": vix, "Kapital": capital, "Positioner": positions})
 
-        # Sälj 1 om VIX > high1
-        if vix > high1 and positions > 0:
-            amount_to_sell = positions * (sell1 / 100)
-            sell_value = amount_to_sell * vix * (1 - sell_fee)
-            capital += sell_value
-            positions -= amount_to_sell
-            actions.append({"Datum": date, "Aktion": "Sälj", "VIX": vix, "Kapital": capital, "Positioner": positions})
-
-        # Sälj 2 om VIX > high2
-        if vix > high2 and positions > 0:
-            amount_to_sell = positions * (sell2 / 100)
-            sell_value = amount_to_sell * vix * (1 - sell_fee)
-            capital += sell_value
-            positions -= amount_to_sell
-            actions.append({"Datum": date, "Aktion": "Sälj", "VIX": vix, "Kapital": capital, "Positioner": positions})
-
         # Sälj allt om VIX > sellall
         if vix > sellall and positions > 0:
             sell_value = positions * vix * (1 - sell_fee)
