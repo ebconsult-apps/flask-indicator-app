@@ -64,7 +64,7 @@ def simulate_gp_model(params, vix_data, leverage=1, initial_cap=100000, sell_fee
             })
 
         # Sälj allt om VIX > sellall
-        if vix > sellall and positions > 0:
+        if vix > sellall and positions_value > 0:
             sell_value = positions_value * (1 - sell_fee)
             capital += sell_value
             positions_value = 0
