@@ -1,4 +1,4 @@
-from flask import Flask, render_template, jsonify
+from flask import Flask, jsonify
 import pandas as pd
 import yfinance as yf
 
@@ -28,14 +28,14 @@ def simulate_gp_model(params, vix_data, leverage=1, initial_cap=100000, sell_fee
             amount_to_invest = capital * (buy1 / 100) * leverage
             positions += amount_to_invest / vix
             capital -= amount_to_invest
-            actions.append([date, "Köp", vix, capital, positions])
+            actions.append({"Datum": date, "Aktion": "Köp", "VIX": vix, "Kapital": capital, "Positioner": positions})
 
         # Köp 2 om VIX < low2
         if vix < low2 and capital > 0:
             amount_to_invest = capital * (buy2 / 100) * leverage
             positions += amount_to_invest / vix
             capital -= amount_to_invest
-            actions.append([date, "Köp", vix, capital, positions])
+            actions.append({"Datum": date, "Aktion": "Köp", "VIX": vix, "Kapital": capital, "Positioner": positions})
 
         # Sälj 1 om VIX > high1
         if vix > high1 and positions > 0:
@@ -43,7 +43,7 @@ def simulate_gp_model(params, vix_data, leverage=1, initial_cap=100000, sell_fee
             sell_value = amount_to_sell * vix * (1 - sell_fee)
             capital += sell_value
             positions -= amount_to_sell
-            actions.append([date, "Sälj", vix, capital, positions])
+            actions.append({"Datum": date, "Aktion": "Sälj", "VIX": vix, "Kapital": capital, "Positioner": positions})
 
         # Sälj 2 om VIX > high2
         if vix > high2 and positions > 0:
@@ -51,29 +51,29 @@ def simulate_gp_model(params, vix_data, leverage=1, initial_cap=100000, sell_fee
             sell_value = amount_to_sell * vix * (1 - sell_fee)
             capital += sell_value
             positions -= amount_to_sell
-            actions.append([date, "Sälj", vix, capital, positions])
+            actions.append({"Datum": date, "Aktion": "Sälj", "VIX": vix, "Kapital": capital, "Positioner": positions})
 
         # Sälj allt om VIX > sellall
         if vix > sellall and positions > 0:
             sell_value = positions * vix * (1 - sell_fee)
             capital += sell_value
             positions = 0
-            actions.append([date, "Sälj Allt", vix, capital, positions])
+            actions.append({"Datum": date, "Aktion": "Sälj Allt", "VIX": vix, "Kapital": capital, "Positioner": positions})
 
-    return pd.DataFrame(actions, columns=["Datum", "Aktion", "VIX", "Kapital", "Positioner"])
+    return actions
 
-# Endpoint för att visa GP-modellen
+# Endpoint för att visa GP-Minimized modellen
 @app.route('/gp_model')
 def gp_model():
     vix_data = yf.Ticker('^VIX').history(period="max")[['Close']].rename(columns={'Close': 'VIX'})
     vix_data_2012 = vix_data[vix_data.index >= "2012-01-01"]
-    actions_df = simulate_gp_model(gp_optimized_params, vix_data_2012)
-    return actions_df.to_json(orient="records")
+    actions = simulate_gp_model(gp_optimized_params, vix_data_2012)
+    return jsonify(actions)
 
-# Huvudsida
+# Root-route
 @app.route('/')
 def home():
-    return render_template("index.html")
+    return "Besök /gp_model för att se GP-Optimized modellen i JSON-format."
 
 if __name__ == "__main__":
     app.run(debug=True)
