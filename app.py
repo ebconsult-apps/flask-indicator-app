@@ -17,7 +17,7 @@ gp_optimized_params = [82.93481, 13.147202, 19.855963]  # Sälj allt vid sellall
 def simulate_gp_model(params, vix_data, leverage=1, initial_cap=100000, sell_fee=0.05, holding_fee=0.0002):
     buy1, low1, sellall = params
     capital = initial_cap
-    positions = 0
+    positions_value = 0
     actions = []
 
     # Startvärde för VIX för att spåra rörelser
