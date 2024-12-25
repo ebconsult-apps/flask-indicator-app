@@ -1,9 +1,12 @@
-import os  # Lägg till denna rad för att använda os.environ
-from flask import Flask, jsonify, render_template_string
+import os
+from flask import Flask, render_template_string
 import pandas as pd
 import yfinance as yf
 import datetime
 from datetime import timedelta
+import matplotlib.pyplot as plt
+import io
+import base64
 
 app = Flask(__name__)
 
@@ -65,7 +68,7 @@ def simulate_gp_model(params, vix_data, leverage=1, initial_cap=100000, sell_fee
 
     return actions
 
-# Endpoint för snygg tabell med data från de senaste 6 månaderna
+# Endpoint för att visa GP-Optimized modellen för de senaste 6 månaderna
 @app.route('/gp_model_last6months')
 def gp_model_last6months():
     end_date = datetime.datetime.now()
@@ -75,24 +78,46 @@ def gp_model_last6months():
 
     # Konvertera till DataFrame
     df = pd.DataFrame(actions)
-    df['Datum'] = pd.to_datetime(df['Datum']).dt.strftime('%Y-%m-%d')
+    df['Datum'] = pd.to_datetime(df['Datum'])
+    df['Ackumulerad Kapital'] = df['Kapital'].cumsum()
+    df['Ackumulerad Position'] = df['Positioner'].cumsum()
+
+    # Generera graf för ackumulerade värden
+    plt.figure(figsize=(10, 6))
+    plt.plot(df['Datum'], df['Ackumulerad Kapital'], label='Ackumulerad Kapital', color='blue')
+    plt.plot(df['Datum'], df['Ackumulerad Position'], label='Ackumulerad Position', color='orange')
+    plt.xlabel('Datum')
+    plt.ylabel('Värde')
+    plt.title('Ackumulerad Kapital och Position (Last 6 Months)')
+    plt.legend()
+    plt.grid()
+
+    # Spara grafen som en base64-sträng
+    img = io.BytesIO()
+    plt.savefig(img, format='png', bbox_inches='tight')
+    img.seek(0)
+    graph_url = base64.b64encode(img.getvalue()).decode()
+    plt.close()
 
     # Generera HTML-tabellen
     table_html = df.to_html(index=False, classes='table table-striped', border=0)
 
-    # Enkel HTML-sida
+    # Enkel HTML-sida med graf och tabell
     html = f"""
     <!DOCTYPE html>
     <html lang="en">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>GP-Optimized Actions (Last 6 Months)</title>
+        <title>GP-Optimized Actions with Accumulation</title>
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.1.3/css/bootstrap.min.css">
     </head>
     <body>
         <div class="container mt-5">
             <h1>GP-Optimized Actions (Last 6 Months)</h1>
+            <div class="mb-4">
+                <img src="data:image/png;base64,{graph_url}" class="img-fluid" alt="Graf för ackumulerade värden">
+            </div>
             {table_html}
         </div>
     </body>
@@ -107,7 +132,7 @@ def home():
     <h1>Välkommen till GP-Optimized Modellen</h1>
     <p>Använd följande endpoints:</p>
     <ul>
-        <li><a href="/gp_model_last6months">/gp_model_last6months</a>: Visa aktioner för de senaste 6 månaderna</li>
+        <li><a href="/gp_model_last6months">/gp_model_last6months</a>: Visa aktioner och graf för de senaste 6 månaderna</li>
     </ul>
     """
 
