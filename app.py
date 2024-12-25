@@ -1,3 +1,4 @@
+import os  # Lägg till denna rad för att använda os.environ
 from flask import Flask, jsonify, render_template_string
 import pandas as pd
 import yfinance as yf
