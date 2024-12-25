@@ -66,6 +66,10 @@ def simulate_gp_model(params, vix_data, leverage=1, initial_cap=100000, sell_fee
             positions = 0
             actions.append({"Datum": date, "Aktion": "Sälj Allt", "VIX": vix, "Kapital": capital, "Positioner": positions})
 
+        # Lägg till aktuellt hållt värde
+        total_value = capital + (positions * vix)
+        actions[-1]["Ackumulerat Värde"] = total_value
+
     return actions
 
 # Endpoint för att visa GP-Optimized modellen för de senaste 6 månaderna
@@ -79,16 +83,13 @@ def gp_model_last6months():
     # Konvertera till DataFrame
     df = pd.DataFrame(actions)
     df['Datum'] = pd.to_datetime(df['Datum'])
-    df['Ackumulerad Kapital'] = df['Kapital'].cumsum()
-    df['Ackumulerad Position'] = df['Positioner'].cumsum()
 
     # Generera graf för ackumulerade värden
     plt.figure(figsize=(10, 6))
-    plt.plot(df['Datum'], df['Ackumulerad Kapital'], label='Ackumulerad Kapital', color='blue')
-    plt.plot(df['Datum'], df['Ackumulerad Position'], label='Ackumulerad Position', color='orange')
+    plt.plot(df['Datum'], df['Ackumulerat Värde'], label='Ackumulerat Värde', color='blue')
     plt.xlabel('Datum')
-    plt.ylabel('Värde')
-    plt.title('Ackumulerad Kapital och Position (Last 6 Months)')
+    plt.ylabel('Totalt Värde (SEK)')
+    plt.title('Ackumulerat Värde (Last 6 Months)')
     plt.legend()
     plt.grid()
 
