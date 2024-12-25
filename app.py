@@ -1,7 +1,6 @@
-from flask import Flask, jsonify
+from flask import Flask, jsonify, render_template_string
 import pandas as pd
 import yfinance as yf
-import os
 import datetime
 from datetime import timedelta
 
@@ -65,22 +64,40 @@ def simulate_gp_model(params, vix_data, leverage=1, initial_cap=100000, sell_fee
 
     return actions
 
-# Endpoint för full historik (maximalt data)
-@app.route('/gp_model')
-def gp_model():
-    vix_data = yf.Ticker('^VIX').history(period="max")[['Close']].rename(columns={'Close': 'VIX'})
-    vix_data_2012 = vix_data[vix_data.index >= "2012-01-01"]
-    actions = simulate_gp_model(gp_optimized_params, vix_data_2012)
-    return jsonify(actions)
-
-# Endpoint för de senaste 6 månaderna
+# Endpoint för snygg tabell med data från de senaste 6 månaderna
 @app.route('/gp_model_last6months')
 def gp_model_last6months():
     end_date = datetime.datetime.now()
     start_date = end_date - timedelta(days=6 * 30)  # Ungefär 6 månader
     vix_data = yf.Ticker('^VIX').history(start=start_date, end=end_date)[['Close']].rename(columns={'Close': 'VIX'})
     actions = simulate_gp_model(gp_optimized_params, vix_data)
-    return jsonify(actions)
+
+    # Konvertera till DataFrame
+    df = pd.DataFrame(actions)
+    df['Datum'] = pd.to_datetime(df['Datum']).dt.strftime('%Y-%m-%d')
+
+    # Generera HTML-tabellen
+    table_html = df.to_html(index=False, classes='table table-striped', border=0)
+
+    # Enkel HTML-sida
+    html = f"""
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>GP-Optimized Actions (Last 6 Months)</title>
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.1.3/css/bootstrap.min.css">
+    </head>
+    <body>
+        <div class="container mt-5">
+            <h1>GP-Optimized Actions (Last 6 Months)</h1>
+            {table_html}
+        </div>
+    </body>
+    </html>
+    """
+    return render_template_string(html)
 
 # Root-route
 @app.route('/')
@@ -89,11 +106,10 @@ def home():
     <h1>Välkommen till GP-Optimized Modellen</h1>
     <p>Använd följande endpoints:</p>
     <ul>
-        <li><a href="/gp_model">/gp_model</a>: Visa full historik (2012-2024)</li>
-        <li><a href="/gp_model_last6months">/gp_model_last6months</a>: Visa de senaste 6 månaderna</li>
+        <li><a href="/gp_model_last6months">/gp_model_last6months</a>: Visa aktioner för de senaste 6 månaderna</li>
     </ul>
     """
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))  # Lyssna på port från miljövariabeln
+    port = int(os.environ.get("PORT", 5000))  # Lyssna på Render-port
     app.run(host="0.0.0.0", port=port)
