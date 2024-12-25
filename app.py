@@ -28,43 +28,56 @@ def simulate_gp_model(params, vix_data, leverage=1, initial_cap=100000, sell_fee
         vix = vix_data['VIX'].iloc[i]
 
         # Lägg till holdingkostnad och justera för hävstång
-        if positions > 0:
+        if positions_value > 0:
             if prev_vix is not None:
                 # Rörelse i VIX
                 vix_change = (vix - prev_vix) / prev_vix
-                positions *= (1 + leverage * vix_change)  # Justera positionerna för hävstång
+                positions_value *= ((1 + leverage) * vix_change)  # Justera positionerna för hävstång
 
-            holding_cost = positions * vix * holding_fee
-            capital -= holding_cost  # Dra holdingkostnad från kapital
+            positions_value = positions_value * (1- holding_fee)
+            # Dra holdingkostnad från positionsvalue
 
         # Utför köp om VIX < low1 och positionerna är 0 (förhindrar multipla köp)
-        if vix < low1 and capital > 0 and positions == 0:
+        if vix < low1 and capital > 0 and positions_value == 0:
             amount_to_invest = capital * (buy1 / 100)
-            positions += amount_to_invest / vix
+            positions_value += amount_to_invest
             capital -= amount_to_invest
             actions.append({
                 "Datum": date,
                 "Aktion": "Köp",
                 "VIX": vix,
                 "Kapital": capital,
-                "Positioner": positions
+                "Positioner": positions_value
+            })
+            
+        # Utför köp om VIX < low1 och positionerna är 0 (förhindrar multipla köp)
+        if vix < low1 and capital > 0 and ((positions_value)/capital)<0.25:
+            amount_to_invest = capital * (buy1 / 100)
+            positions_value += amount_to_invest
+            capital -= amount_to_invest
+            actions.append({
+                "Datum": date,
+                "Aktion": "Köp igen",
+                "VIX": vix,
+                "Kapital": capital,
+                "Positioner": positions_value
             })
 
         # Sälj allt om VIX > sellall
         if vix > sellall and positions > 0:
-            sell_value = positions * vix * (1 - sell_fee)
+            sell_value = positions_value * (1 - sell_fee)
             capital += sell_value
-            positions = 0
+            positions_value = 0
             actions.append({
                 "Datum": date,
                 "Aktion": "Sälj Allt",
                 "VIX": vix,
                 "Kapital": capital,
-                "Positioner": positions
+                "Positioner": positions_value
             })
 
         # Beräkna aktuellt ackumulerat värde
-        total_value = capital + (positions * vix)
+        total_value = capital + positions_value
         if actions:
             actions[-1]["Ackumulerat Värde"] = total_value
 
