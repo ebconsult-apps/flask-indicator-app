@@ -11,7 +11,7 @@ import base64
 app = Flask(__name__)
 
 # GP-Optimized Parametrar
-gp_optimized_params = [82.93481, 19.436844, 13.147202, 10.477527, 19.855963]  # Sälj allt vid sellall
+gp_optimized_params = [82.93481, 13.147202, 19.855963]  # Sälj allt vid sellall
 
 # Funktion för simulering med GP-Optimized modellen
 def simulate_gp_model(params, vix_data, leverage=1, initial_cap=100000, sell_fee=0.05, holding_fee=0.0002):
